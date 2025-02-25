@@ -94,11 +94,12 @@ class ImageGeneratorServer {
         const filepath = await imageSaver.saveBase64(fileName, base64!);
 
         return {
-          toolResult: {
-            uri: `file://${filepath}`,
-            type: 'image',
-            mimeType: 'image/png'
-          }
+          content: [
+            {
+              type: 'text',
+              text: `Image generated and saved to: ${filepath}`
+            }
+          ]
         }
       }
     )
