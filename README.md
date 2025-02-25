@@ -1,4 +1,4 @@
-# image-generator MCP Server
+# SoLo image-generator MCP Server
 
 An mcp server that generates images based on image prompts
 
