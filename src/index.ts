@@ -47,34 +47,47 @@ class ImageGeneratorServer {
   }
 
   private setupToolHandlers(): void {
+    console.error("Setting up tool handlers");
+    
     this.server.setRequestHandler(
       ListToolsRequestSchema,
-      async () => ({
-        tools: [{
-          name: "generate_image",
-          description: "Generate an image from a prompt.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              prompt: {
-                type: "string",
-                description: "A prompt detailing what image to generate."
+      async () => {
+        console.error("Received ListToolsRequest");
+        return {
+          tools: [{
+            name: "generate_image",
+            description: "Generate an image from a prompt.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                prompt: {
+                  type: "string",
+                  description: "A prompt detailing what image to generate."
+                },
+                imageName: {
+                  type: "string",
+                  description: "The filename for the image excluding any extensions."
+                },
+                useHostedApi: {
+                  type: "boolean",
+                  description: "Whether to use the hosted API at imagegen.sololink.cloud (true) or generate directly with OpenAI (false).",
+                  default: true
+                }
               },
-              imageName: {
-                type: "string",
-                description: "The filename for the image excluding any extensions."
-              }
-            },
-            required: ["prompt", "imageName"]
-          }
-        }]
-      })
+              required: ["prompt", "imageName"]
+            }
+          }]
+        };
+      }
     );
 
     this.server.setRequestHandler(
       CallToolRequestSchema,
       async (request) => {
+        console.error(`Received CallToolRequest for tool: ${request.params.name}`);
+        
         if (request.params.name !== "generate_image") {
+          console.error(`Unknown tool requested: ${request.params.name}`);
           throw new McpError(
             ErrorCode.MethodNotFound,
             `Unknown tool: ${request.params.name}`
@@ -82,24 +95,45 @@ class ImageGeneratorServer {
         }
 
         if (!isValidImageGenerationArgs(request.params.arguments)) {
+          console.error(`Invalid arguments: ${JSON.stringify(request.params.arguments)}`);
           throw new McpError(
             ErrorCode.InvalidParams,
             "Invalid image generation arguments"
           )
         };
         
-        const { prompt, imageName } = request.params.arguments;
-        const base64 = await new ImageGenerator().generateImage(prompt);
-        const fileName = `${imageName.replace(/\..*$/, '')}.png`;
-        const filepath = await imageSaver.saveBase64(fileName, base64!);
+        try {
+          console.error("Processing image generation request");
+          const { prompt, imageName, useHostedApi = true } = request.params.arguments;
+          console.error(`Using hosted API: ${useHostedApi}`);
+          
+          const imageGenerator = new ImageGenerator(process.env.OPENAI_API_KEY, useHostedApi);
+          const base64 = await imageGenerator.generateImage(prompt);
+          
+          if (!base64) {
+            console.error("No base64 image data returned");
+            throw new Error("Failed to generate image: No image data returned");
+          }
+          
+          const fileName = `${imageName.replace(/\..*$/, '')}.png`;
+          console.error(`Saving image with filename: ${fileName}`);
+          const filepath = await imageSaver.saveBase64(fileName, base64);
+          console.error(`Image saved successfully to: ${filepath}`);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Image generated and saved to: ${filepath}`
-            }
-          ]
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Image generated and saved to: ${filepath}`
+              }
+            ]
+          }
+        } catch (error) {
+          console.error(`Error in generate_image tool: ${error instanceof Error ? error.message : String(error)}`);
+          throw new McpError(
+            ErrorCode.InternalError,
+            `Failed to generate image: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
     )
@@ -111,7 +145,9 @@ class ImageGeneratorServer {
     
     // Although this is just an informative message, we must log to stderr,
     // to avoid interfering with MCP communication that happens on stdout
-    console.error("Weather MCP server running on stdio");
+    console.error("Image Generator MCP server running on stdio");
+    console.error(`Server version: 0.1.0`);
+    console.error(`Server started at: ${new Date().toISOString()}`);
   }
 }
 
